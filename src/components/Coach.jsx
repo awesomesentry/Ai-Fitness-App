@@ -19,6 +19,7 @@ const QUICK_ACTIONS = [
   { label: '📈 My progress', tab: 'progress' }
 ]
 
+
 export default function Coach({
   profile,
   plan,
@@ -59,27 +60,46 @@ export default function Coach({
     setBusy(true)
     setNotice('')
 
-    let reply = ''
-    let usedAi = false
+    // Guarantees the input unlocks even if the AI request stalls or throws.
+    const withTimeout = (promise, ms = 15000) =>
+      Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          window.setTimeout(() => reject(new Error('AI_TIMEOUT')), ms)
+        })
+      ])
 
-    if (aiEnabled) {
-      try {
-        reply = await askAiCoach({ message, history, context })
-        usedAi = true
-      } catch (error) {
-        setNotice(
-          `Live AI request failed (${error.message}). Replying with the built-in offline coach instead.`
-        )
+    try {
+      let reply = ''
+      let usedAi = false
+
+      if (aiEnabled) {
+        try {
+          reply = await withTimeout(askAiCoach({ message, history, context }))
+          usedAi = true
+        } catch (error) {
+          const reason =
+            error && error.message === 'AI_TIMEOUT'
+              ? 'timed out after 15s'
+              : error.message
+          setNotice(
+            `Live AI request failed (${reason}). Replying with the built-in offline coach instead.`
+          )
+        }
       }
+
+      if (!reply) reply = askLocalCoach({ message, context })
+
+      // Cap history at 100 entries so localStorage can never grow unbounded.
+      onChatChange(
+        [
+          ...nextHistory,
+          { role: 'assistant', text: reply, source: usedAi ? 'ai' : 'local' }
+        ].slice(-100)
+      )
+    } finally {
+      setBusy(false)
     }
-
-    if (!reply) reply = askLocalCoach({ message, context })
-
-    onChatChange([
-      ...nextHistory,
-      { role: 'assistant', text: reply, source: usedAi ? 'ai' : 'local' }
-    ])
-    setBusy(false)
 
     // Keep the newest message in view on the next paint.
     requestAnimationFrame(() => {

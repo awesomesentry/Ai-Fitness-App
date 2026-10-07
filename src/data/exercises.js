@@ -142,6 +142,36 @@ export const EXERCISES = [
     cues: 'Towel around a sturdy door handle, lean back and row your chest to your hands.'
   },
   {
+    id: 'superman-pull',
+    name: 'Superman Pull',
+    pattern: 'pull',
+    level: 1,
+    equipment: 'bodyweight',
+    unit: 'reps',
+    muscles: ['Upper Back', 'Rear Delts'],
+    cues: 'Lying face down, lift chest and squeeze the shoulder blades together, lower slowly.'
+  },
+  {
+    id: 'reverse-snow-angel',
+    name: 'Reverse Snow Angel',
+    pattern: 'pull',
+    level: 1,
+    equipment: 'bodyweight',
+    unit: 'reps',
+    muscles: ['Upper Back', 'Rear Delts'],
+    cues: 'Face down, arms overhead, sweep them wide to your sides without shrugging.'
+  },
+  {
+    id: 'chair-shrug-row',
+    name: 'Chair-Supported Row Hold',
+    pattern: 'pull',
+    level: 1,
+    equipment: 'bodyweight',
+    unit: 'seconds',
+    muscles: ['Back', 'Biceps'],
+    cues: 'Hands on a sturdy table edge, lean back straight and hold the top squeeze.'
+  },
+  {
     id: 'band-curl',
     name: 'Band Biceps Curl',
     pattern: 'pull',
@@ -244,6 +274,36 @@ export const EXERCISES = [
     unit: 'reps',
     muscles: ['Glutes', 'Hamstrings'],
     cues: 'Drive the heels down, squeeze the glutes, do not arch the lower back.'
+  },
+  {
+    id: 'backpack-good-morning',
+    name: 'Backpack Good Morning',
+    pattern: 'hinge',
+    level: 1,
+    equipment: 'bodyweight',
+    unit: 'reps',
+    muscles: ['Hamstrings', 'Glutes'],
+    cues: 'Backpack hugged to the chest, soft knees, hinge until you feel a hamstring stretch.'
+  },
+  {
+    id: 'wall-hip-hinge',
+    name: 'Wall Hip-Hinge Drill',
+    pattern: 'hinge',
+    level: 1,
+    equipment: 'bodyweight',
+    unit: 'reps',
+    muscles: ['Hamstrings', 'Glutes'],
+    cues: 'Back to a wall one step away, reach the hips back to tap it, flat back.'
+  },
+  {
+    id: 'bird-dog-hold',
+    name: 'Bird Dog Hold',
+    pattern: 'hinge',
+    level: 1,
+    equipment: 'bodyweight',
+    unit: 'seconds',
+    muscles: ['Glutes', 'Back'],
+    cues: 'On all fours, extend opposite arm and leg, hold without rotating the hips.'
   },
   {
     id: 'band-deadlift',

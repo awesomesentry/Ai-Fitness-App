@@ -16,7 +16,16 @@ const FILTERS = [
   { id: 'mobility', label: PATTERNS.mobility }
 ]
 
-export default function WorkoutPlan({ profile, plan, completions, weekKey, onToggleDay, onRegenerate }) {
+export default function WorkoutPlan({
+  profile,
+  plan,
+  completions,
+  weekKey,
+  onToggleDay,
+  onRegenerate,
+  planLoading,
+  planNotice
+}) {
   const [patternFilter, setPatternFilter] = useState('all')
   const [showLibrary, setShowLibrary] = useState(false)
 
@@ -41,18 +50,25 @@ export default function WorkoutPlan({ profile, plan, completions, weekKey, onTog
           <div>
             <p className="hero__eyebrow">
               {plan?.weekLabel} · {plan?.goalLabel} · {plan?.level}
+              {plan?.source === 'ai' ? ' · ✨ written by the AI' : ' · ⚙️ built-in generator'}
             </p>
             <h1>Your AI weekly plan</h1>
             <p className="hero__sub">
               {plan?.goalDescription} Every session starts with a 5-minute warm-up and finishes with
               the cool-down listed at the bottom of this page.
             </p>
+
+            {planLoading && (
+              <p className="alert alert--info">Your AI coach is writing this week&apos;s plan…</p>
+            )}
+            {planNotice && <p className={`alert alert--${planNotice.tone}`}>{planNotice.text}</p>}
           </div>
           <div className="plan-header__actions">
             <button
               type="button"
               className="button button--ghost"
               onClick={onRegenerate}
+              disabled={planLoading}
               title="Keeps your settings, reshuffles the exercise selection"
             >
               ↻ New variation

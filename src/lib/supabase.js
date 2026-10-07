@@ -1,12 +1,12 @@
 /**
- * Supabase backend - optional staging seam.
+ * Supabase backend client.
  *
- * The app is fully self-contained in `localStorage` right now. This module is
- * the Supabase entry point: when the Vite env variables below are NOT set it
- * returns `null`, so the app behaves exactly as it does today. Once you paste
- * the keys from your Supabase project (see `supabase/README.md`), the app can
- * migrate each data set (profile, plan, completions, weights, chat) to
- * Supabase tables instead of the browser.
+ * Auth (registration / sign-in) is wired through this client - see
+ * `src/lib/auth.js`. When the Vite env variables below are NOT set the
+ * module returns `null` everywhere, so the app behaves exactly as it does
+ * without a backend (demo mode). The data tables (profile, plan,
+ * completions, weights, chat) are still localStorage-backed; the migration
+ * map at the bottom documents their shapes for when you wire them up.
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -40,23 +40,33 @@ export const SUPABASE_CONFIG = {
 /** True only when both the URL and the anon key are configured. */
 export const isSupabaseConfigured = () => Boolean(SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey)
 
+// Module-level cache: auth needs ONE long-lived client so session changes
+// (sign-in / sign-out / token refresh) fire onAuthStateChange exactly once.
+let cachedClient = null
+
 /**
- * Returns a connected client when configured, otherwise `null` (fail-safe).
- * Always call this lazily (inside effects/handlers) so the app never touches
- * the network while the env vars are absent.
+ * Returns the shared connected client when configured, otherwise `null`
+ * (fail-safe). Safe to call anywhere - it never touches the network while
+ * the env vars are absent.
  */
 export const createSupabaseClient = () => {
   if (!isSupabaseConfigured()) return null
+  if (cachedClient) return cachedClient
 
-  // persistSession:false - the app has no login flow yet, so the browser's
-  // localStorage stays the source of truth until auth is added.
-  return createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+  // The app now has a real login flow (src/lib/auth.js), so sessions ARE
+  // persisted and refreshed - the user stays signed in across reloads.
+  cachedClient = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
   })
+  return cachedClient
 }
 
 /**
- * Lazily returns a connected client when configured, otherwise `null`.
+ * Lazily returns the shared client when configured, otherwise `null`.
  * Prefer this alias in components - it reads as intent ("give me the backend
  * if there is one").
  */
@@ -69,15 +79,16 @@ export const getSupabaseClient = () => createSupabaseClient()
  * Data sets (all stored under an `aifit:` prefix in localStorage today):
  *   1. profile      (profile object: name, goal, level, daysPerWeek,
  *                    equipment, sex, age, heightCm, weightKg, activity)
- *   2. plan         (generated plan + signature + variant)
+ *   2. plan         (generated plan + signature + variant + source)
  *   3. completions  ({ [weekKey]: { [dayId]: ISOString } })
  *   4. weights      (newest-first: [{ date, kg }], capped at 60)
  *   5. chat         (coach chat: [{ role, text, source }])
  *
  * Suggested Supabase schema (see `supabase/schema.sql`):
  *
- *   profiles      (id uuid PK, name, goal, level, days_per_week, equipment,
- *                  sex, age, height_cm, weight_kg, activity, created_at)
+ *   profiles      (id uuid PK, user_id uuid FK auth.users, name, goal, level,
+ *                  days_per_week, equipment, sex, age, height_cm, weight_kg,
+ *                  activity, created_at)
  *   plans         (id uuid PK, profile_id uuid FK, week_key, payload jsonb,
  *                  signature text, variant int)
  *   completions   (id uuid PK, profile_id uuid FK, week_key text, day_id text,

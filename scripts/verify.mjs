@@ -24,6 +24,8 @@ import {
   countWeekCompletions
 } from '../src/lib/storage.js'
 import { askLocalCoach, buildCoachContext, SUGGESTED_PROMPTS } from '../src/lib/coach.js'
+import { allowedExercises, askAiPlan, buildPlanMessages, parseAiPlan } from '../src/lib/aiPlan.js'
+import { isAiConfigured } from '../src/lib/aiClient.js'
 
 let failures = 0
 const check = (label, condition, detail = '') => {
@@ -314,6 +316,125 @@ check(
     EXERCISES.some((exercise) => exercise.pattern === pattern && exercise.equipment === 'band')
   )
 )
+
+console.log('\n=== 8. AI plan generation (prompt, validation, hydration) ===')
+
+const allowed = allowedExercises(baselineProfile)
+const idFor = (pattern) => (allowed.find((entry) => entry.pattern === pattern) || allowed[0]).id
+const secondsExercise = allowed.find((entry) => entry.unit === 'seconds')
+
+const fixtureDays = [0, 1, 2].map((index) => ({
+  title: `Session ${index + 1}`,
+  focus: 'Push · Pull · Core',
+  minutes: 45 + index,
+  calories: 320,
+  exercises: [
+    {
+      id: idFor('push'),
+      sets: 3,
+      reps: 10,
+      rest: 60,
+      tempo: '2s down / 1s up',
+      weightHint: 'Solid reps'
+    },
+    { id: idFor('pull'), sets: '5', reps: 99, rest: 999 }, // clamped on hydration
+    { id: 'made-up-exercise', sets: 3, reps: 10, rest: 60 }, // dropped
+    ...(secondsExercise ? [{ id: secondsExercise.id, sets: 3, reps: 5, rest: 45 }] : [])
+  ]
+}))
+
+const planMessages = buildPlanMessages(baselineProfile, { variant: 2 })
+check(
+  'plan prompt has a system and a user message',
+  planMessages.length === 2 && planMessages[0].role === 'system' && planMessages[1].role === 'user'
+)
+check('plan prompt lists the exercise catalogue', planMessages[1].content.includes(idFor('push')))
+check('plan prompt carries the variation nonce', planMessages[1].content.includes('Variation nonce: 2'))
+check(
+  'plan prompt only advertises allowed ids',
+  allowed.every((entry) => planMessages[1].content.includes(entry.id))
+)
+
+const hydrated = parseAiPlan(JSON.stringify({ days: fixtureDays }), baselineProfile, {
+  variant: 2
+})
+check('AI plan has the requested day count', hydrated.days.length === baselineProfile.daysPerWeek)
+check('AI plan is tagged with its source', hydrated.source === 'ai')
+check(
+  'AI plan day ids exist in the library',
+  hydrated.days.every((day) => day.exercises.every((entry) => libraryIds.has(entry.id)))
+)
+check(
+  'unknown exercise ids are dropped',
+  hydrated.days.every((day) => day.exercises.every((entry) => entry.id !== 'made-up-exercise'))
+)
+check(
+  'sets are clamped to 2-8',
+  hydrated.days.every((day) => day.exercises.every((entry) => entry.sets >= 2 && entry.sets <= 8))
+)
+check(
+  'rest is clamped to 10-180s',
+  hydrated.days.every((day) => day.exercises.every((entry) => entry.rest >= 10 && entry.rest <= 180))
+)
+check(
+  'reps stay in a renderable range',
+  hydrated.days.every((day) => day.exercises.every((entry) => entry.reps >= 1 && entry.reps <= 100))
+)
+if (secondsExercise) {
+  const entry = hydrated.days.flatMap((day) => day.exercises).find((e) => e.id === secondsExercise.id)
+  check('seconds exercises clamp reps to 15-120', Boolean(entry) && entry.reps >= 15 && entry.reps <= 120)
+}
+check(
+  'day labels follow the training schedule',
+  hydrated.days.every((day, index) => day.dayIndex === scheduleDays(baselineProfile.daysPerWeek)[index])
+)
+check(
+  'summary totals match the hydrated days',
+  hydrated.summary.sessions === hydrated.days.length &&
+    hydrated.summary.totalSets > 0 &&
+    hydrated.summary.totalMinutes > 0
+)
+check(
+  'warm-up and cool-down are hydrated from the library',
+  hydrated.warmup.length > 0 && hydrated.cooldown.length > 0
+)
+check(
+  'markdown-fenced replies still parse',
+  parseAiPlan(`\`\`\`json\n${JSON.stringify({ days: fixtureDays })}\n\`\`\``, baselineProfile)
+    .days.length === 3
+)
+
+const expectThrow = (label, fn, prefix) => {
+  let threw = ''
+  try {
+    fn()
+  } catch (error) {
+    threw = String(error.message || '')
+  }
+  check(label, threw.startsWith(prefix), `got "${threw}"`)
+}
+
+expectThrow('non-JSON replies throw AI_BAD_JSON', () => parseAiPlan('nope', baselineProfile), 'AI_BAD_JSON')
+expectThrow(
+  'wrong day count throws AI_INVALID_PLAN',
+  () => parseAiPlan(JSON.stringify({ days: fixtureDays.slice(0, 2) }), baselineProfile),
+  'AI_INVALID_PLAN'
+)
+expectThrow(
+  'missing days array throws AI_INVALID_PLAN',
+  () => parseAiPlan(JSON.stringify({ plans: [] }), baselineProfile),
+  'AI_INVALID_PLAN'
+)
+
+if (!isAiConfigured()) {
+  let unconfigured = false
+  try {
+    await askAiPlan(baselineProfile)
+  } catch (error) {
+    unconfigured = error.message === 'AI_NOT_CONFIGURED'
+  }
+  check('askAiPlan fails loudly when no AI endpoint is configured', unconfigured)
+}
 
 console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : `${failures} CHECK(S) FAILED`}\n`)
 process.exit(failures === 0 ? 0 : 1)

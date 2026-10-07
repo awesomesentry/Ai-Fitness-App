@@ -1,30 +1,25 @@
 /**
  * AI Coach.
  *
- * If an OpenAI-compatible endpoint is configured through Vite env variables the
- * coach sends the user's question plus their training context to that API.
- * Without an API key the app falls back to a built-in rule-based coach so the
- * feature always works offline.
+ * When an OpenAI-compatible endpoint is configured through Vite env variables
+ * the coach sends the user's question plus their training context to that API
+ * via the shared client in `aiClient.js`. Without configuration (or when a
+ * request fails) the app falls back to a built-in rule-based coach so the
+ * feature always works offline - that failsafe stays on purpose.
  */
 
 import { GOALS, describeProfile } from './workoutEngine.js'
-import { calculateNutrition } from './nutrition.js'
+import { calculateNutrition, projectNutrition } from './nutrition.js'
+import { AI_CONFIG, chatCompletion, describeAiError, isAiConfigured } from './aiClient.js'
 
-const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : {}
-
-export const AI_CONFIG = {
-  url: env.VITE_AI_API_URL || '',
-  key: env.VITE_AI_API_KEY || '',
-  model: env.VITE_AI_MODEL || 'gpt-4o-mini'
-}
-
-export const isAiConfigured = () => Boolean(AI_CONFIG.url)
+// Re-exported so Coach.jsx keeps a single import site for AI helpers.
+export { AI_CONFIG, isAiConfigured, describeAiError }
 
 /** Compact snapshot of the user's situation, used as context for both coaches. */
-export const buildCoachContext = ({ profile, plan, completions, weekKey }) => {
+export const buildCoachContext = ({ profile, plan, completions, weekKey, nutrition: provided }) => {
   if (!profile) return { text: 'No profile yet.', profile: null, plan: null }
 
-  const nutrition = calculateNutrition(profile)
+  const nutrition = provided || calculateNutrition(profile)
   const goal = GOALS[profile.goal] || GOALS.muscle
   const completed = Object.keys(completions?.[weekKey] || {}).length
   const planned = plan?.days?.length || profile.daysPerWeek || 3
@@ -41,7 +36,7 @@ export const buildCoachContext = ({ profile, plan, completions, weekKey }) => {
     }`
   ]
 
-  return { text: lines.join('\n'), profile, plan, nutrition, goal }
+  return { text: lines.join('\n'), profile, plan, nutrition, goal, completed, planned }
 }
 
 /** Prompt template given to the upstream model. */
@@ -61,10 +56,9 @@ ${context.text}`
 /**
  * Sends a message to the configured chat completions endpoint.
  * Throws on network/HTTP errors so the caller can fall back.
+ * A 20s timeout prevents a stalled endpoint from hanging the chat forever.
  */
 export const askAiCoach = async ({ message, history = [], context }) => {
-  if (!isAiConfigured()) throw new Error('AI_NOT_CONFIGURED')
-
   const messages = [
     { role: 'system', content: buildSystemPrompt(context) },
     ...history
@@ -74,24 +68,9 @@ export const askAiCoach = async ({ message, history = [], context }) => {
     { role: 'user', content: message }
   ]
 
-  const response = await fetch(AI_CONFIG.url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(AI_CONFIG.key ? { Authorization: `Bearer ${AI_CONFIG.key}` } : {})
-    },
-    body: JSON.stringify({ model: AI_CONFIG.model, messages, temperature: 0.6, max_tokens: 500 })
-  })
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(`AI_HTTP_${response.status}:${detail.slice(0, 160)}`)
-  }
-
-  const data = await response.json()
-  const reply = data?.choices?.[0]?.message?.content
-  if (!reply) throw new Error('AI_EMPTY_RESPONSE')
-  return reply.trim()
+  // chatCompletion throws AI_NOT_CONFIGURED / AI_TIMEOUT / AI_HTTP_<n> so the
+  // caller in Coach.jsx can fall back to the offline coach with a reason.
+  return chatCompletion({ messages, temperature: 0.6, maxTokens: 500, timeoutMs: 20_000 })
 }
 
 /* --------------------------------------------------- offline rule-based coach */
@@ -133,24 +112,37 @@ const INTENTS = [
   {
     id: 'weightloss',
     keywords: ['lose weight', 'lose fat', 'slim', 'cut', 'fat loss', 'losing weight'],
-    build: ({ nutrition, profile }) => [
-      `For fat loss at ${profile.weightKg || 70} kg your target is about ${nutrition.calories} kcal per day (TDEE ${nutrition.tdee}, a ${Math.abs(nutrition.calorieDelta)} kcal deficit).`,
-      `- Protein ${nutrition.macros.protein} g (${nutrition.proteinPerKg} g/kg), carbs ${nutrition.macros.carbs} g, fat ${nutrition.macros.fat} g.`,
-      `- Water ${nutrition.waterLitres} L and about ${nutrition.stepTarget} steps on training and rest days.`,
-      '- Train 3-5 times a week: your generated plan plus the conditioning finishers is plenty.',
-      '- Check the scale weekly, not daily. A 0.5-1% drop per week is the sweet spot.'
-    ]
+    build: ({ nutrition, profile }) => {
+      // Project a genuine fat-loss target: quoting `nutrition.calories` here
+      // would advertise the user's *current* goal target under a cut's label,
+      // and `calorieDelta` can be positive when the goal is not fat loss.
+      const target = projectNutrition(profile, 'fatloss')
+      const drop = Math.max(0, target.tdee - target.calories)
+      return [
+        `For fat loss at ${profile.weightKg || 70} kg you would eat about ${target.calories} kcal per day (${target.tdee} kcal maintenance, a ${drop} kcal deficit).`,
+        `- Protein ${target.macros.protein} g, carbs ${target.macros.carbs} g, fat ${target.macros.fat} g.`,
+        `- Water ${nutrition.waterLitres} L and about ${nutrition.stepTarget} steps on training and rest days.`,
+        '- Train 3-5 times a week: your generated plan plus the conditioning finishers is plenty.',
+        '- Check the scale weekly, not daily. A 0.5-1% drop per week is the sweet spot.'
+      ]
+    }
   },
   {
     id: 'muscle',
     keywords: ['build muscle', 'gain muscle', 'bulk', 'get bigger', 'hypertrophy', 'grow'],
-    build: ({ nutrition, profile }) => [
-      `To build muscle at ${profile.weightKg || 70} kg eat about ${nutrition.calories} kcal with ${nutrition.macros.protein} g protein (${nutrition.proteinPerKg} g/kg).`,
-      '- Prioritise the big patterns: push-up, squat, hinge and row variations 2-3 times weekly.',
-      '- Add reps before adding complexity: hit the top of the rep range on every set first.',
-      '- Rest 60-90 seconds between sets so each set stays high quality.',
-      '- Aim to gain roughly 0.25-0.5% of body weight per week, not more.'
-    ]
+    build: ({ nutrition, profile }) => {
+      // Project from the *profile*, not from the user's current goal target,
+      // so a user who is currently cutting still gets honest bulking numbers.
+      const target = projectNutrition(profile, 'muscle')
+      const surplus = target.calories - target.tdee
+      return [
+        `To build muscle at ${profile.weightKg || 70} kg eat about ${target.calories} kcal per day (${Math.max(0, surplus)} kcal over your ${target.tdee} kcal maintenance) with ${target.macros.protein} g protein.`,
+        '- Prioritise the big patterns: push-up, squat, hinge and row variations 2-3 times weekly.',
+        '- Add reps before adding complexity: hit the top of the rep range on every set first.',
+        '- Rest 60-90 seconds between sets so each set stays high quality.',
+        '- Aim to gain roughly 0.25-0.5% of body weight per week, not more.'
+      ]
+    }
   },
   {
     id: 'nutrition',
@@ -227,14 +219,25 @@ export const SUGGESTED_PROMPTS = [
  * completion log so the answers always feel personal.
  */
 export const askLocalCoach = ({ message, context }) => {
-  const text = String(message || '').toLowerCase().trim()
+  // Strip trailing punctuation so "hello!", "hi?" etc. still match.
+  const text = String(message || '')
+    .toLowerCase()
+    .replace(/[?!.,;:]+$/g, '')
+    .trim()
 
   if (!text) return 'Ask me anything about your training, nutrition or recovery.'
+
+  // Context can arrive incomplete (e.g. right after a reset) - fall back to
+  // values derived from the profile instead of throwing mid-reply.
+  const goal = context.goal || GOALS[context.profile?.goal] || GOALS.muscle
+  const nutrition = context.nutrition || calculateNutrition(context.profile || {})
+  const completed = Number.isFinite(context.completed) ? context.completed : 0
+  const planned = context.planned || context.plan?.days?.length || 3
 
   if (GREETING_WORDS.some((word) => text === word || text.startsWith(`${word} `))) {
     return [
       `Hey${context.profile?.name ? ` ${context.profile.name}` : ''} - ready to work?`,
-      `You are on the ${context.goal.label} plan with ${context.planned} sessions this week, ${context.completed} done.`,
+      `You are on the ${goal.label} plan with ${planned} sessions this week, ${completed} done.`,
       'Ask me about your workouts, nutrition targets, soreness, motivation or progression.'
     ].join('\n')
   }
@@ -247,21 +250,21 @@ export const askLocalCoach = ({ message, context }) => {
     return intent
       .build({
         plan: context.plan,
-        nutrition: context.nutrition,
-        goal: context.goal || GOALS.muscle,
+        nutrition,
+        goal,
         profile: context.profile || {},
-        completed: context.completed,
-        planned: context.planned
+        completed,
+        planned
       })
       .join('\n')
   }
 
   // Nothing matched - return a useful status summary instead of a dead end.
-  const nextDay = context.plan?.days?.[context.completed % (context.plan?.days?.length || 1)]
+  const nextDay = context.plan?.days?.[completed % (context.plan?.days?.length || 1)]
   return [
-    `Quick status: ${context.goal.label}, ${context.completed}/${context.planned} sessions done this week.`,
+    `Quick status: ${goal.label}, ${completed}/${planned} sessions done this week.`,
     nextDay ? `Next up: ${nextDay.label} - ${nextDay.title} (~${nextDay.minutes} min).` : '',
-    `Nutrition: ${context.nutrition.calories} kcal, protein ${context.nutrition.macros.protein} g, water ${context.nutrition.waterLitres} L.`,
+    `Nutrition: ${nutrition.calories} kcal, protein ${nutrition.macros.protein} g, water ${nutrition.waterLitres} L.`,
     '',
     'I can help with exercise technique, swapping exercises, weekly splits, calories and macros, soreness and recovery, or staying motivated.'
   ]

@@ -16,6 +16,7 @@ export default function Progress({
   completions,
   weekKey,
   weights,
+  chat,
   onWeightChange,
   onResetAll
 }) {
@@ -52,7 +53,8 @@ export default function Progress({
       plan,
       nutrition,
       completions,
-      weights
+      weights,
+      chat
     })
   }
 

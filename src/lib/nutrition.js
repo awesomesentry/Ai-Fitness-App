@@ -110,6 +110,34 @@ export const calculateNutrition = (profile) => {
   }
 }
 
+/**
+ * Calories/protein for a *hypothetical* goal, using exactly the same maths as
+ * `calculateNutrition`. Lets the coach answer "what if I cut?" honestly instead
+ * of quoting the user's current target under a different goal's label.
+ */
+export const projectNutrition = (profile = {}, goal) => {
+  const sex = profile.sex === 'female' ? 'female' : 'male'
+  const targetGoal = ['muscle', 'fatloss', 'maintain'].includes(goal) ? goal : 'maintain'
+  const activityKey = ACTIVITY_FACTORS[profile.activity]
+    ? profile.activity
+    : suggestActivity(profile.daysPerWeek)
+  const tdee = Math.round(calculateBmr({ ...profile, sex }) * ACTIVITY_FACTORS[activityKey].value)
+  const calories = goalCalories({ tdee, goal: targetGoal, sex })
+  const split = macroSplit(targetGoal)
+
+  return {
+    goal: targetGoal,
+    tdee,
+    calories,
+    deficit: calories - tdee,
+    macros: {
+      protein: Math.round((calories * split.protein) / 4),
+      carbs: Math.round((calories * split.carbs) / 4),
+      fat: Math.round((calories * split.fat) / 9)
+    }
+  }
+}
+
 /** High-protein meal ideas that need no special equipment. */
 export const MEAL_IDEAS = {
   breakfast: [

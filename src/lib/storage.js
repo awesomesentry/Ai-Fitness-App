@@ -139,22 +139,34 @@ const weekKeyToDate = (weekKey) => {
   return addDays(mondayOfWeek1, (week - 1) * 7)
 }
 
-/** Local (non-exported helper) duplicate of the engine week key to avoid a cycle. */
-/** Drop completion entries for days that no longer exist in the generated plan. */
-export const pruneCompletionsForPlan = (completions, plan) => {
-  const next = { ...(completions || {}) }
-  for (const weekKey of Object.keys(next)) {
-    const validIds = new Set((plan?.days || []).map((day) => day.id))
+/**
+ * Drop completion entries for days that no longer exist in the generated plan.
+ * Only the current week is touched, so shrinking daysPerWeek can never show
+ * counts like "5/3" while older history is preserved.
+ */
+export const pruneCompletionsForPlan = (completions, plan, onlyWeekKey = null) => {
+  if (!completions || typeof completions !== 'object') return completions || {}
+  const validIds = new Set((plan?.days || []).map((day) => day.id))
+  const weekKeys = onlyWeekKey ? [onlyWeekKey] : Object.keys(completions)
+  let changed = false
+  const next = { ...completions }
+  for (const weekKey of weekKeys) {
+    if (!next[weekKey]) continue
     const pruned = Object.fromEntries(
       Object.entries(next[weekKey] || {}).filter(([dayId]) => validIds.has(dayId))
     )
-    if (Object.keys(pruned).length === 0) {
+    const before = Object.keys(next[weekKey]).length
+    const after = Object.keys(pruned).length
+    if (after !== before) changed = true
+    if (after === 0) {
       delete next[weekKey]
     } else {
       next[weekKey] = pruned
     }
   }
-  return next
+  // Same reference when nothing changed so callers can setState unconditionally
+  // without causing an extra render.
+  return changed ? next : completions
 }
 
 /** Local (non-exported helper) duplicate of the engine week key to avoid a cycle. */

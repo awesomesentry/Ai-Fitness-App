@@ -1,7 +1,11 @@
-# Supabase staging
+# Supabase setup
 
-The app runs **fully without Supabase** - everything lives in `localStorage`.
-This folder stages the backend so you can switch over when ready.
+**Auth (registration / sign-in) is wired in** - `src/lib/auth.js` + `src/components/Auth.jsx`
+activate as soon as you add the two env vars below. Until then the app runs fully without
+Supabase: everything lives in `localStorage` and the auth screen offers a local demo mode.
+
+The **data tables** (profile, plan, completions, weights, chat) are still staged so you can
+migrate them later (see step 4).
 
 ## 1. Create the project
 
@@ -21,6 +25,19 @@ VITE_SUPABASE_ANON_KEY=<your-anon-public-key>
 Find both under **Settings -> API**. Use the **anon public** key -
 never the service-role key. Restart `npm run dev` afterwards.
 
+## 2b. Enable email auth
+
+1. Dashboard -> **Authentication -> Sign In / Up** -> **Email** provider: enabled.
+2. For quick local testing, turn **Confirm email** off (otherwise registrations
+   land on the "check your email" screen until you click the link).
+3. Sign-ups created from the app store `display_name` in the user metadata;
+   the navbar reads it via `accountLabel()` in `src/lib/auth.js`.
+
+The auth screens then go live: **Create account** (`signUp`), **Sign in**
+(`signInWithPassword`) and **Sign out** in the navbar. Sessions persist across
+reloads (the Supabase client in `src/lib/supabase.js` is a singleton with
+`persistSession: true`).
+
 ## 3. Verify the connection
 
 In the browser console on http://localhost:5173:
@@ -28,7 +45,7 @@ In the browser console on http://localhost:5173:
 ```js
 const m = await import('/src/lib/supabase.js')
 m.isSupabaseConfigured() // true once .env is set
-await m.getSupabaseClient().from('profiles').select('id').limit(1)
+await m.getSupabaseClient().auth.getSession() // session or null
 ```
 
 ## 4. Migrating the data sets (when ready)

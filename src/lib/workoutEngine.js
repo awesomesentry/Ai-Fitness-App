@@ -407,6 +407,9 @@ export const generatePlan = (profile, options = {}) => {
     weekKey,
     weekLabel: buildWeekLabel(),
     variant,
+    // Provenance: 'ai' plans come from the real model (aiPlan.js), 'local' is
+    // this deterministic failsafe. The UI shows which one produced the plan.
+    source: 'local',
     days,
     restDays: DAY_LABELS.filter((_, index) => !trainingDayIndexes.includes(index)),
     warmup: WARMUP_IDS.map(getExerciseById).filter(Boolean).slice(0, 3),

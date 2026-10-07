@@ -15,7 +15,11 @@ const EQUIPMENT_OPTIONS = [
 
 const DAY_OPTIONS = [2, 3, 4, 5, 6]
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+const clampNumber = (value, min, max) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return ''
+  return Math.min(max, Math.max(min, parsed))
+}
 
 export default function Onboarding({ initialProfile, isEditing, onComplete, onCancel }) {
   const [form, setForm] = useState({ ...initialProfile, name: initialProfile.name || '' })
@@ -34,15 +38,15 @@ export default function Onboarding({ initialProfile, isEditing, onComplete, onCa
       setError('Please tell us your name so the coach can cheer you on.')
       return
     }
-    if (!(weightKg > 25 && weightKg < 300)) {
+    if (!(weightKg >= 25 && weightKg <= 300)) {
       setError('Enter a body weight between 25 kg and 300 kg.')
       return
     }
-    if (!(heightCm > 100 && heightCm < 250)) {
+    if (!(heightCm >= 100 && heightCm <= 250)) {
       setError('Enter a height between 100 cm and 250 cm.')
       return
     }
-    if (!(age > 12 && age < 100)) {
+    if (!(age >= 13 && age <= 99)) {
       setError('Enter an age between 13 and 99.')
       return
     }
@@ -65,9 +69,9 @@ export default function Onboarding({ initialProfile, isEditing, onComplete, onCa
           <span className="onboarding__badge">⚡ AI Fitness Coach</span>
           <h1>{isEditing ? 'Update your profile' : 'Let’s build your plan'}</h1>
           <p>
-            Answer a few quick questions and we&apos;ll generate a weekly workout split, calorie
-            targets and a coach that knows your numbers. No account needed - everything stays in
-            this browser.
+            Answer a few quick questions and your AI coach will write a weekly workout split,
+            calorie targets and coaching that knows your numbers. Your data stays in this browser
+            unless you sign in to your account.
           </p>
         </div>
 
@@ -178,7 +182,8 @@ export default function Onboarding({ initialProfile, isEditing, onComplete, onCa
                 min="13"
                 max="99"
                 value={form.age}
-                onChange={(event) => update('age', clamp(Number(event.target.value), 13, 99))}
+                onChange={(event) => update('age', event.target.value)}
+                onBlur={(event) => update('age', clampNumber(event.target.value, 13, 99))}
               />
             </label>
 
@@ -189,7 +194,8 @@ export default function Onboarding({ initialProfile, isEditing, onComplete, onCa
                 min="100"
                 max="250"
                 value={form.heightCm}
-                onChange={(event) => update('heightCm', clamp(Number(event.target.value), 100, 250))}
+                onChange={(event) => update('heightCm', event.target.value)}
+                onBlur={(event) => update('heightCm', clampNumber(event.target.value, 100, 250))}
               />
             </label>
 
@@ -201,7 +207,8 @@ export default function Onboarding({ initialProfile, isEditing, onComplete, onCa
                 max="300"
                 step="0.1"
                 value={form.weightKg}
-                onChange={(event) => update('weightKg', Number(event.target.value))}
+                onChange={(event) => update('weightKg', event.target.value)}
+                onBlur={(event) => update('weightKg', clampNumber(event.target.value, 25, 300))}
               />
             </label>
 

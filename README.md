@@ -1,10 +1,12 @@
 # ⚡ AI Fitness Coach
 
-A React + Vite web app that generates a personalised weekly training plan, sets your nutrition and
-calorie targets, tracks your progress in `localStorage`, and gives you an AI coach you can chat with.
+A React + Vite web app where the **actual AI** writes your personalised weekly training plan, sets
+your nutrition and calorie targets, tracks your progress in `localStorage`, and chats with you as
+your coach. Registration and sign-in are built on Supabase Auth.
 
-Everything runs in the browser - no backend, no account, no data leaves your machine unless you
-explicitly connect an AI API key.
+AI features activate as soon as you connect an OpenAI-compatible endpoint (`.env`). Until then a
+deterministic engine and an offline rule-based coach keep everything usable, and the auth screens
+offer a local demo mode - nothing breaks when the AI or a backend is unavailable.
 
 ---
 
@@ -12,7 +14,8 @@ explicitly connect an AI API key.
 
 | Feature | What it does |
 | --- | --- |
-| 🏋️ **AI-generated workout plans** | Builds a weekly split (2-6 days) from your goal, level, available days and equipment, picking exercises from a 60+ movement library. |
+| 🔐 **Registration & sign in** | Supabase Auth-backed create-account and sign-in screens (with email confirmation support), a persistent session, and a local demo mode until your project keys are added. |
+| 🏋️ **AI-written workout plans** | The real AI builds your weekly split (2-6 days) from your goal, level, available days and equipment; every response is validated against the 60+ movement library before it renders. If the AI is unavailable, the built-in engine takes over with a visible notice. |
 | 🎯 **Fitness goals** | Build Muscle, Lose Fat or Maintain. Each goal changes sets, reps, rest, tempo, calorie targets and macro split. |
 | 💪 **Levels** | Beginner / Intermediate / Advanced - controls exercise difficulty, weekly volume and tempo cues. |
 | 🏠 **Home + resistance-band workouts** | Every exercise needs nothing more than bodyweight, a band or a loaded backpack. Filter the library by bodyweight or band. |
@@ -43,13 +46,23 @@ npm run verify
 
 Requires **Node.js 18+**.
 
-On first run the app shows an onboarding form. Fill it in and your plan is generated instantly.
+On first run the app shows the **sign in / create account** screen. Create an account (or continue
+in demo mode while Supabase is unconfigured), then fill in the onboarding form and your plan is
+generated instantly.
 
 ---
 
-## 🤖 Enabling the live AI coach (optional)
+## 🤖 Connecting the real AI (plans + coach)
 
-The coach works without any configuration using a built-in rule-based engine. To use a real LLM:
+Two features use the actual AI when configured through the env:
+
+- **Weekly plans** (`src/lib/aiPlan.js`) - the model returns plan JSON which is validated and
+  hydrated against the exercise library; without an endpoint (or on any failure) the deterministic
+  engine generates the plan and the UI shows why.
+- **Coach chat** (`src/lib/coach.js`) - works offline with a built-in rule-based coach (the
+  failsafe); with an endpoint configured, answers come from the live model.
+
+To enable both:
 
 1. Copy `.env.example` to `.env`
 2. Fill in an OpenAI-compatible chat completions endpoint:
@@ -68,12 +81,18 @@ OpenAI-compatible endpoint.
 > ⚠️ Anything prefixed with `VITE_` is bundled into the client. Only use this for personal/demo
 > projects or with a restricted key. For production, proxy requests through your own backend.
 
-If a request fails (no key, bad URL, rate limit), the chat automatically falls back to the offline
-coach and tells you why.
+If a request fails (no key, bad URL, rate limit), the chat falls back to the offline coach and the
+plan falls back to the built-in engine - both tell you why.
 
 ---
 
 ## 🧠 How the plan is generated
+
+When `VITE_AI_API_URL` is set, `src/lib/aiPlan.js` asks the model for the plan (JSON) using your
+profile plus the allowed exercise catalogue, then validates and hydrates the reply - unknown ids
+are dropped, sets/reps/rest are clamped, and day labels, schedule, warm-up, cool-down and summary
+totals are computed locally. The steps below describe the **deterministic fallback engine**
+(`src/lib/workoutEngine.js`) used whenever the AI is unavailable:
 
 1. **Split selection** - the number of training days maps to a split template:
    - 2 days → Full Body A / B
@@ -108,25 +127,31 @@ src/
 ├── main.jsx                # React entry point
 ├── styles.css              # Design tokens, layout, components, responsive rules
 ├── components/
-│   ├── Onboarding.jsx      # Profile form (goal, level, days, equipment, body data)
-│   ├── Navbar.jsx          # Sticky navigation + profile menu
-│   ├── Dashboard.jsx       # Greeting, weekly ring, next workout, macro summary
-│   ├── WorkoutPlan.jsx     # All training days, warm-up/cool-down, exercise library
-│   ├── DayCard.jsx         # One training day (expandable, mark-as-done)
-│   ├── Nutrition.jsx       # Calorie/macro targets, meal ideas, coaching tips
-│   ├── Progress.jsx        # Consistency chart, weight log, milestones, reset
-│   ├── Coach.jsx           # AI chat interface
-│   └── StatCard.jsx        # Reusable metric tile
+│   ├── Auth.jsx             # Registration + sign-in screens (Supabase Auth)
+│   ├── Onboarding.jsx       # Profile form (goal, level, days, equipment, body data)
+│   ├── Navbar.jsx           # Sticky navigation + account menu (sign out)
+│   ├── Dashboard.jsx        # Greeting, weekly ring, next workout, macro summary
+│   ├── WorkoutPlan.jsx      # All training days, warm-up/cool-down, exercise library
+│   ├── DayCard.jsx          # One training day (expandable, mark-as-done)
+│   ├── Nutrition.jsx        # Calorie/macro targets, meal ideas, coaching tips
+│   ├── Progress.jsx         # Consistency chart, weight log, milestones, reset
+│   ├── Coach.jsx            # AI chat interface (offline coach as failsafe)
+│   ├── ErrorBoundary.jsx    # Top-level crash screen
+│   └── StatCard.jsx         # Reusable metric tile
 ├── hooks/
-│   └── useLocalStorage.js  # useState + localStorage persistence
+│   └── useLocalStorage.js   # useState + localStorage persistence
 ├── lib/
-│   ├── workoutEngine.js    # Plan generator (splits, selection, prescriptions)
-│   ├── nutrition.js        # BMR/TDEE/macro engine + meal ideas
-│   ├── coach.js            # Live AI client + offline rule-based coach
-│   ├── progress.js         # Stats, history chart data, export helper
-│   └── storage.js          # Storage keys, completions, streaks, weight log
+│   ├── aiClient.js          # Shared AI endpoint client (config, timeout, errors)
+│   ├── aiPlan.js            # AI plan prompt + validation + hydration
+│   ├── auth.js              # Supabase signUp/signIn/signOut/session helpers
+│   ├── supabase.js          # Singleton Supabase client (null until configured)
+│   ├── workoutEngine.js     # Fallback plan generator (splits, selection, prescriptions)
+│   ├── nutrition.js         # BMR/TDEE/macro engine + meal ideas
+│   ├── coach.js             # Live AI chat + offline rule-based coach (failsafe)
+│   ├── progress.js          # Stats, history chart data, export helper
+│   └── storage.js           # Storage keys, completions, streaks, weight log
 └── data/
-    └── exercises.js        # Exercise library + levels + movement patterns
+    └── exercises.js         # Exercise library + levels + movement patterns
 
 scripts/
 └── verify.mjs              # npm run verify - engine assertions, no browser needed
@@ -137,17 +162,17 @@ scripts/
 ## 🛠️ Commands
 
 
-## 🔌 Supabase (optional backend - staged, not yet wired in)
+## 🔌 Supabase (auth is wired; data tables staged)
 
-The app runs fully **without** Supabase (localStorage only). The backend is
-staged so you can switch over when ready: `supabase/schema.sql` creates the
-tables, `supabase/README.md` walks through project setup, and
-`src/lib/supabase.js` is the client seam (returns `null` until
-`VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` are set in `.env`).
+**Auth is live**: `src/lib/auth.js` + `src/components/Auth.jsx` use Supabase Auth for registration,
+sign-in and sign-out as soon as `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` are set in `.env`
+(see `supabase/README.md`). Without keys the auth screen explains itself and offers a local demo
+mode.
 
-No code path reads Supabase yet - when you provide your key, follow
-`supabase/README.md` step 4 to migrate each data set behind
-`isSupabaseConfigured()`, keeping localStorage as the offline fallback.
+The **data tables** are still staged for later: `supabase/schema.sql` creates them and
+`src/lib/supabase.js` documents each data set's shape. To migrate, follow `supabase/README.md`
+step 4 and swap each data set behind `isSupabaseConfigured()`, keeping localStorage as the
+offline fallback.
 
 | Command | Description |
 | --- | --- |
