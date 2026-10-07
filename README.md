@@ -136,6 +136,19 @@ scripts/
 
 ## 🛠️ Commands
 
+
+## 🔌 Supabase (optional backend - staged, not yet wired in)
+
+The app runs fully **without** Supabase (localStorage only). The backend is
+staged so you can switch over when ready: `supabase/schema.sql` creates the
+tables, `supabase/README.md` walks through project setup, and
+`src/lib/supabase.js` is the client seam (returns `null` until
+`VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` are set in `.env`).
+
+No code path reads Supabase yet - when you provide your key, follow
+`supabase/README.md` step 4 to migrate each data set behind
+`isSupabaseConfigured()`, keeping localStorage as the offline fallback.
+
 | Command | Description |
 | --- | --- |
 | `npm run dev` | Start the Vite dev server with hot reload |

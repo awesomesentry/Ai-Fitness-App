@@ -7,7 +7,7 @@ import Nutrition from './components/Nutrition.jsx'
 import Progress from './components/Progress.jsx'
 import Coach from './components/Coach.jsx'
 import useLocalStorage from './hooks/useLocalStorage.js'
-import { STORAGE_KEYS, clearAppStorage, markDayComplete } from './lib/storage.js'
+import { STORAGE_KEYS, clearAppStorage, markDayComplete, pruneCompletionsForPlan } from './lib/storage.js'
 import { generatePlan, getWeekKey } from './lib/workoutEngine.js'
 import { calculateNutrition, suggestActivity } from './lib/nutrition.js'
 
@@ -34,8 +34,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [editingProfile, setEditingProfile] = useState(false)
   const [regenerateCount, setRegenerateCount] = useState(0)
+  // Bumped whenever the ISO week rolls over while the tab stays open, so
+  // weekKey/planSignature recompute and the new week's plan renders.
+  const [weekTick, setWeekTick] = useState(0)
 
-  const weekKey = getWeekKey()
+  // Derive the current week key; weekTick forces a re-render check across
+  // week boundaries for long-lived tabs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const weekKey = useMemo(() => getWeekKey(), [weekTick])
 
   /** Signature of everything that should trigger a brand new plan. */
   const planSignature = profile
@@ -50,12 +56,44 @@ export default function App() {
       ].join('|')
     : ''
 
+  // Restore the persisted regenerate counter (stored on the plan as `variant`)
+  // so a reload keeps the same plan shuffle instead of silently resetting to 0.
+  // The plan write below always carries `variant: regenerateCount`, so this
+  // converges after one render and then stays quiet.
+  useEffect(() => {
+    if (typeof plan?.variant === 'number' && plan.variant !== regenerateCount) {
+      setRegenerateCount(plan.variant)
+    }
+  }, [plan, regenerateCount])
+
+  // Re-render check for ISO-week rollover while the tab stays open.
+  // A stale weekKey would otherwise keep serving the previous week's plan,
+  // completions and coach context until the next interaction.
+  useEffect(() => {
+    let lastSeen = getWeekKey()
+    const id = window.setInterval(() => {
+      const next = getWeekKey()
+      if (next !== lastSeen) {
+        lastSeen = next
+        setWeekTick((tick) => tick + 1)
+      }
+    }, 30_000)
+    return () => window.clearInterval(id)
+  }, [])
+
   // (Re)generate the plan whenever the profile or the week changes.
+  // Stale day entries (e.g. day-4/day-5 after shrinking daysPerWeek) are
+  // pruned alongside so counts can never exceed the current plan.
   useEffect(() => {
     if (!profile) return
-    if (plan?.signature === planSignature) return
-    setPlan({ ...generatePlan(profile, { regenerate: regenerateCount }), signature: planSignature })
-  }, [profile, planSignature, regenerateCount, plan, setPlan])
+    if (plan?.signature === planSignature) {
+      setCompletions((previous) => pruneCompletionsForPlan(previous, plan))
+      return
+    }
+    const fresh = { ...generatePlan(profile, { regenerate: regenerateCount }), signature: planSignature }
+    setPlan(fresh)
+    setCompletions((previous) => pruneCompletionsForPlan(previous, fresh))
+  }, [profile, planSignature, regenerateCount, plan, setPlan, setCompletions])
 
   const nutrition = useMemo(() => (profile ? calculateNutrition(profile) : null), [profile])
 

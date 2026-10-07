@@ -28,7 +28,7 @@ export default function Dashboard({
   )
 
   const today = todayIndex()
-  const todaysDay = plan?.days?.find((day) => day.dayIndex === today) || plan?.days?.[0]
+  const todaysDay = plan?.days?.find((day) => day.dayIndex === today)
   const todaysDone = todaysDay ? Boolean(completions?.[weekKey]?.[todaysDay.id]) : false
 
   return (
@@ -127,7 +127,11 @@ export default function Dashboard({
           <div className="panel__head">
             <h2>Your next workout</h2>
             <span className="panel__sub">
-              {todaysDone ? 'Already logged for today - nice work!' : 'Tap an exercise row to expand'}
+              {todaysDone
+                ? 'Already logged for today - nice work!'
+                : todaysDay
+                ? 'Tap an exercise row to expand'
+                : "It's a rest day today - use the recovery day for mobility or a walk"}
             </span>
           </div>
 

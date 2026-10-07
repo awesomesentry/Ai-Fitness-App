@@ -3,7 +3,7 @@
  */
 
 import { getWeekKey } from './workoutEngine.js'
-import { calculateStreak } from './storage.js'
+import { calculateStreak, addDays } from './storage.js'
 
 const MINUTES_PER_SESSION_DEFAULT = 35
 const CALORIES_PER_SESSION_DEFAULT = 260
@@ -13,7 +13,7 @@ export const recentWeekKeys = (count = 8) => {
   const keys = []
   const now = new Date()
   for (let offset = count - 1; offset >= 0; offset -= 1) {
-    keys.push(getWeekKey(new Date(now.getTime() - offset * 7 * 24 * 60 * 60 * 1000)))
+    keys.push(getWeekKey(addDays(now, -offset * 7)))
   }
   return keys
 }
