@@ -241,6 +241,20 @@ select {
   font-size: 0.84rem;
 }
 
+.navbar__account {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navbar__account-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .link-button {
   background: none;
   border: 0;

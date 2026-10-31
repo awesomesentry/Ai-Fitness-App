@@ -20,7 +20,9 @@ export default function Dashboard({
   weights,
   onTabChange,
   onToggleDay,
-  onRegenerate
+  onRegenerate,
+  planLoading,
+  planNotice
 }) {
   const stats = useMemo(
     () => buildStats({ completions, plan, weights }),
@@ -28,8 +30,15 @@ export default function Dashboard({
   )
 
   const today = todayIndex()
-  const todaysDay = plan?.days?.find((day) => day.dayIndex === today) || plan?.days?.[0]
-  const todaysDone = todaysDay ? Boolean(completions?.[weekKey]?.[todaysDay.id]) : false
+  const weekCompletions = completions?.[weekKey] || {}
+  const todaysDay = plan?.days?.find((day) => day.dayIndex === today) || null
+  const todaysDone = todaysDay ? Boolean(weekCompletions[todaysDay.id]) : false
+  // Next session the user still owes this week (today counts if not done).
+  const nextPending =
+    plan?.days?.find((day) => !weekCompletions[day.id] && day.dayIndex >= today) ||
+    plan?.days?.find((day) => !weekCompletions[day.id]) ||
+    null
+  const focusDay = todaysDay || nextPending
 
   return (
     <div className="page">
@@ -37,6 +46,7 @@ export default function Dashboard({
         <div className="hero__text">
           <p className="hero__eyebrow">
             {plan?.weekLabel} · Week plan generated for {plan?.goalLabel}
+            {plan?.source === 'ai' ? ' · ✨ written by the AI' : ' · ⚙️ built-in generator'}
           </p>
           <h1>
             {greeting()}
@@ -46,6 +56,11 @@ export default function Dashboard({
             {plan?.focusNote} You train {plan?.daysPerWeek} days per week with{' '}
             {plan?.equipment === 'bands' ? 'bodyweight and resistance bands' : 'bodyweight only'}.
           </p>
+
+          {planLoading && (
+            <p className="alert alert--info">Your AI coach is writing this week&apos;s plan…</p>
+          )}
+          {planNotice && <p className={`alert alert--${planNotice.tone}`}>{planNotice.text}</p>}
 
           <div className="hero__actions">
             <button
@@ -66,6 +81,7 @@ export default function Dashboard({
               type="button"
               className="button button--ghost"
               onClick={onRegenerate}
+              disabled={planLoading}
               title="Generate a fresh selection of exercises for this week"
             >
               ↻ Regenerate plan
@@ -125,17 +141,21 @@ export default function Dashboard({
       <section className="panel-grid">
         <div className="panel panel--wide">
           <div className="panel__head">
-            <h2>Your next workout</h2>
+            <h2>{todaysDay ? 'Your next workout' : "Up next (rest day today)"}</h2>
             <span className="panel__sub">
-              {todaysDone ? 'Already logged for today - nice work!' : 'Tap an exercise row to expand'}
+              {todaysDone
+                ? 'Already logged for today - nice work!'
+                : todaysDay
+                  ? 'Tap an exercise row to expand'
+                  : 'Rest day today - use it for mobility or a walk, then hit the session above.'}
             </span>
           </div>
 
-          {todaysDay ? (
+          {focusDay ? (
             <DayCard
-              day={todaysDay}
-              isComplete={todaysDone}
-              isToday={todaysDay.dayIndex === today}
+              day={focusDay}
+              isComplete={Boolean(weekCompletions[focusDay.id])}
+              isToday={focusDay.dayIndex === today}
               onToggle={onToggleDay}
               defaultOpen
               showWarmup

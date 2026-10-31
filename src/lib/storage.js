@@ -84,7 +84,7 @@ export const markDayComplete = (completions, weekKey, dayId, completed = true) =
   return next
 }
 
-/** Consecutive weeks (ending with the current one) that have at least one session. */
+/** Consecutive weeks that have at least one completed session. */
 export const calculateStreak = (completions) => {
   const weeks = Object.keys(completions || {})
     .filter((weekKey) => Object.keys(completions[weekKey] || {}).length > 0)
@@ -92,22 +92,81 @@ export const calculateStreak = (completions) => {
 
   if (weeks.length === 0) return { weeks: 0, sessions: 0 }
 
-  let streak = 0
-  let cursor = new Date()
-  // Walk backwards week by week while the week still has completions.
-  const weekHasSessions = (date) => weeks.includes(weekKeyFor(date))
-
-  while (weekHasSessions(cursor)) {
-    streak += 1
-    cursor = new Date(cursor.getTime() - 7 * 24 * 60 * 60 * 1000)
-  }
-
+  const sessionsThisWeek = Object.keys(completions?.[weekKeyFor(new Date())] || {}).length
   const sessions = Object.values(completions).reduce(
     (total, week) => total + Object.keys(week || {}).length,
     0
   )
 
+  if (sessionsThisWeek > 0) {
+    // Walk backwards from now while the week still has completions.
+    let streak = 0
+    let cursor = new Date()
+    while (weeks.includes(weekKeyFor(cursor))) {
+      streak += 1
+      cursor = addDays(cursor, -7)
+    }
+    return { weeks: streak, sessions }
+  }
+
+  // Current week is empty: the streak still counts back from the most recent
+  // completed week (it just doesn't include the empty current week).
+  const lastCompleted = weeks[weeks.length - 1]
+  let streak = 0
+  let cursor = weekKeyToDate(lastCompleted)
+  while (weeks.includes(weekKeyFor(cursor))) {
+    streak += 1
+    cursor = addDays(cursor, -7)
+  }
   return { weeks: streak, sessions }
+}
+
+/** Add (or subtract) whole days; avoids DST drift from fixed 7×24-hour steps. */
+export const addDays = (date, days) => {
+  const result = new Date(date)
+  result.setDate(result.getDate() + days)
+  return result
+}
+
+/** Converts an ISO week key back to that week's Monday; used for streak walks. */
+const weekKeyToDate = (weekKey) => {
+  const match = /^(\d{4})-W(\d{2})$/.exec(String(weekKey || ''))
+  if (!match) return new Date()
+  const year = Number(match[1])
+  const week = Number(match[2])
+  const jan4 = new Date(year, 0, 4)
+  const mondayOfWeek1 = addDays(jan4, -((jan4.getDay() + 6) % 7))
+  return addDays(mondayOfWeek1, (week - 1) * 7)
+}
+
+/**
+ * Drop completion entries for days that no longer exist in the generated plan.
+ * Only the current week is touched, so shrinking daysPerWeek can never show
+ * counts like "5/3" while older history is preserved.
+ */
+export const pruneCompletionsForPlan = (completions, plan, onlyWeekKey = null) => {
+  if (!completions || typeof completions !== 'object') return completions || {}
+  const validIds = new Set((plan?.days || []).map((day) => day.id))
+  const weekKeys = onlyWeekKey ? [onlyWeekKey] : Object.keys(completions)
+  let changed = false
+  const next = { ...completions }
+  for (const weekKey of weekKeys) {
+    if (!next[weekKey]) continue
+    const pruned = Object.fromEntries(
+      Object.entries(next[weekKey] || {}).filter(([dayId]) => validIds.has(dayId))
+    )
+    const before = Object.keys(next[weekKey]).length
+    const after = Object.keys(pruned).length
+    if (after !== before) changed = true
+    if (after === 0) {
+      delete next[weekKey]
+    } else {
+      next[weekKey] = pruned
+    }
+  }
+  // Same reference when nothing changed so callers can setState unconditionally
+  // without causing an extra render.
+  return changed ? next : completions
 }
 
 /** Local (non-exported helper) duplicate of the engine week key to avoid a cycle. */

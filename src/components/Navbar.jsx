@@ -6,7 +6,15 @@ const TABS = [
   { id: 'coach', label: 'AI Coach', icon: '🤖' }
 ]
 
-export default function Navbar({ activeTab, onTabChange, profile, onEditProfile }) {
+export default function Navbar({
+  activeTab,
+  onTabChange,
+  profile,
+  user,
+  guestMode,
+  onEditProfile,
+  onSignOut
+}) {
   return (
     <header className="navbar">
       <div className="navbar__inner">
@@ -26,6 +34,7 @@ export default function Navbar({ activeTab, onTabChange, profile, onEditProfile 
               key={tab.id}
               type="button"
               className={`nav__item${activeTab === tab.id ? ' nav__item--active' : ''}`}
+              aria-label={tab.label}
               aria-current={activeTab === tab.id ? 'page' : undefined}
               onClick={() => onTabChange(tab.id)}
             >
@@ -41,9 +50,17 @@ export default function Navbar({ activeTab, onTabChange, profile, onEditProfile 
           </div>
           <div className="navbar__profile-meta">
             <strong>{profile?.name || 'Athlete'}</strong>
-            <button type="button" className="link-button" onClick={onEditProfile}>
-              Edit profile
-            </button>
+            <small className="navbar__account">
+              {user ? user.email : guestMode ? 'Demo mode - not signed in' : ''}
+            </small>
+            <div className="navbar__account-actions">
+              <button type="button" className="link-button" onClick={onEditProfile}>
+                Edit profile
+              </button>
+              <button type="button" className="link-button" onClick={onSignOut}>
+                Sign out
+              </button>
+            </div>
           </div>
         </div>
       </div>
